@@ -87,7 +87,8 @@ class OctopushSpec extends Specification with After {
     "signal an error if the credentials are wrong" in {
       implicit val system = ActorSystem()
       val octopush = new Octopush("login@example.com", "apikey")
-      val result = octopush.sms(List("+33601010101"), "Hi, this is a SMS", LowCostFrance)
+      val sms = SMS(smsRecipients = List("+33601010101"), smsText = "Hi, this is a SMS", smsType = LowCostFrance)
+      val result = octopush.sms(sms)
       Await.result(result, 5.seconds) should throwA[APIError]("101")
     }
   }

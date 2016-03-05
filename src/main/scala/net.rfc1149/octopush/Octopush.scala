@@ -1,5 +1,7 @@
 package net.rfc1149.octopush
 
+import java.security.MessageDigest
+
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -13,6 +15,7 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Sink, Source}
 
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success}
 import scala.xml.NodeSeq
 
@@ -50,11 +53,7 @@ class Octopush(userLogin: String, apiKey: String)(implicit system: ActorSystem) 
 
   def credit(): Future[Double] = apiRequest("credit")(creditUnmarshaller)
 
-  def sms(smsRecipients: List[String], smsText: String, smsType: SmsType, transactional: Boolean = false): Future[NodeSeq] = {
-    apiRequest[NodeSeq]("sms",
-      "sms_recipients" -> smsRecipients.mkString(","), "sms_text" -> smsText, "sms_type" -> smsType.toString,
-      "transactional" -> (if (transactional) "1" else "0"))
-  }
+  def sms(sms: SMS): Future[SMSResult] = apiRequest("sms", sms.buildParameters.toSeq: _*)(smsResultUnmarshaller)
 
 }
 
@@ -70,6 +69,67 @@ object Octopush {
 
   case class APIError(errorCode: Int) extends Exception {
     override def getMessage = s"$errorCode ${ErrorCodes.errorMessage(errorCode)}"
+  }
+
+  case class SMS(smsRecipients: List[String], smsText: String,
+                 smsType: SmsType, smsSender: Option[String] = None, sendingTime: Option[DateTime] = None, sendingPeriod: Option[Duration] = None,
+                 recipientFirstNames: Option[List[String]] = None, recipientLastNames: Option[List[String]] = None,
+                 smsFields1: Option[List[String]] = None, smsFields2: Option[List[String]] = None, smsFields3: Option[List[String]] = None,
+                 simulation: Boolean = false, requestId: Option[String] = None, withReplies: Boolean = false, transactional: Boolean = false,
+                 msisdnSender: Boolean = false, requestKeys: String = "") {
+
+    import SMS._
+
+    def buildParameters: Map[String, String] = {
+      var params: Map[String, String] = Map("sms_recipients" -> smsRecipients.mkString(","), "sms_text" -> smsText,
+        "sms_type" -> smsType.toString)
+      smsSender.foreach(params += "sms_sender" -> _)
+      if (sendingTime.isDefined && sendingPeriod.isDefined)
+        throw new IllegalArgumentException("only one of sendingTime and sendingPeriod can be defined")
+      sendingTime.foreach(t => params += "sending_time" -> (t.clicks / 1000).toString)
+      sendingPeriod.foreach(params += "sending_period" -> _.toSeconds.toString)
+      recipientFirstNames.foreach(params += "recipient_first_names" -> _.mkString(","))
+      recipientLastNames.foreach(params += "recipient_last_names" -> _.mkString(","))
+      smsFields1.foreach(params += "sms_fields_1" -> _.mkString(","))
+      smsFields2.foreach(params += "sms_fields_2" -> _.mkString(","))
+      smsFields3.foreach(params += "sms_fields_3" -> _.mkString(","))
+      if (simulation)
+        params += "request_mode" -> "simu"
+      requestId.foreach(params += "request_id" -> _)
+      if (withReplies)
+        params += "with_replies" -> "1"
+      if (transactional)
+        params += "transactional" -> "1"
+      if (msisdnSender)
+        params += "msisdn_sender" -> "1"
+      if (requestKeys != "") {
+        var str = ""
+        for (c <- requestKeys)
+          sha1keys.get(c) match {
+            case Some(key) =>
+              params.get(key) match {
+                case Some(value) => str += value
+                case None        => throw new IllegalArgumentException(s"no value defined for key $key ($c)")
+              }
+            case None =>
+              throw new IllegalArgumentException(s"unknown key $c")
+        }
+        params += "request_keys" -> requestKeys
+        val md = MessageDigest.getInstance("SHA-1")
+        params += "request_sha1" -> md.digest(str.getBytes("UTF-8")).map("%02x".format(_)).mkString
+      }
+
+      params
+    }
+
+  }
+
+  object SMS {
+
+    private val sha1keys = Map('T' -> "sms_text", 'R' -> "sms_recipients", 'M' -> "sms_mode",
+      'Y' -> "sms_type", 'S' -> "sms_sender", 'D' -> "sending_date", 'a' -> "recipients_first_names",
+      'b' -> "recipients_last_names", 'c' -> "sms_fields_1", 'd' -> "sms_fields_2", 'e' -> "sms_fields_3",
+      'W' -> "with_replies", 'N' -> "transactional", 'Q' -> "request_id")
   }
 
   case class Balance(lowCostFrance: Double, premiumFrance: Double)
