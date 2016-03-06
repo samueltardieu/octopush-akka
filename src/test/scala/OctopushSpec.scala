@@ -1,25 +1,47 @@
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import net.rfc1149.octopush.{ErrorCodes, Octopush}
 import net.rfc1149.octopush.Octopush._
+import net.rfc1149.octopush.{ErrorCodes, Octopush}
 import org.specs2.mutable._
+import org.specs2.specification.Scope
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
-class OctopushSpec extends Specification with After {
+class OctopushSpec extends Specification {
 
-  implicit val system = ActorSystem()
-  implicit val dispatcher = system.dispatcher
-  implicit val materializer = ActorMaterializer()
+  trait OctopushScope extends Scope with After {
 
-  override def after = {
-    system.terminate()
+    val octopush: Octopush
+
+    implicit val system = ActorSystem()
+    implicit val dispatcher = system.dispatcher
+    implicit val materializer = ActorMaterializer()
+
+    override def after = {
+      system.terminate()
+    }
+
+  }
+
+  trait DummyOctopushScope extends OctopushScope {
+
+    val octopush = new Octopush("dummy@example.com", "dummyApiKey")
+
+  }
+
+  trait ValidOctopushScope extends OctopushScope {
+
+    val octopush = (System.getenv("OCTOPUSH_USER_LOGIN"), System.getenv("OCTOPUSH_API_KEY")) match {
+      case (null, _) => skipped("no octopush credentials in environment"); null
+      case (userLogin, apiKey) => new Octopush(userLogin, apiKey)
+    }
+
   }
 
   "The unmarshallers" should {
 
-    "decode the balance web site example" in {
+    "decode the balance web site example" in new DummyOctopushScope {
       val response =
         <octopush>
           <balance type="FR">1251.80</balance>
@@ -30,7 +52,7 @@ class OctopushSpec extends Specification with After {
       balance.lowCostFrance must be equalTo 1829.40
     }
 
-    "decode the credit web site example" in {
+    "decode the credit web site example" in new DummyOctopushScope {
       val response =
         <octopush>
           <credit>5623.34</credit>
@@ -38,7 +60,7 @@ class OctopushSpec extends Specification with After {
       Await.result(creditUnmarshaller(response), 1.second) must be equalTo 5623.34
     }
 
-    "decode the SMS sending web site example" in {
+    "decode the SMS sending web site example" in new DummyOctopushScope {
       val response =
         <octopush>
           <error_code>000</error_code>
@@ -75,22 +97,46 @@ class OctopushSpec extends Specification with After {
 
   "retrieving the balance" should {
 
-    "signal an error if the credentials are wrong" in {
-      implicit val system = ActorSystem()
-      val octopush = new Octopush("login@example.com", "apikey")
+    "signal an error if the credentials are wrong" in new DummyOctopushScope {
       Await.result(octopush.balance(), 5.seconds) should throwA[APIError]("101")
+    }
+
+    "return a plausible value" in new ValidOctopushScope {
+      Await.result(octopush.balance(), 5.seconds).lowCostFrance should be greaterThanOrEqualTo 0.0
+      Await.result(octopush.balance(), 5.seconds).premiumFrance should be greaterThanOrEqualTo 0.0
+    }
+
+  }
+
+  "retrieving the account credit" should {
+
+    "signal an error if the credentials are wrong" in new DummyOctopushScope {
+      Await.result(octopush.credit(), 5.seconds) should throwA[APIError]("101")
+    }
+
+    "return a plausible value" in new ValidOctopushScope {
+      Await.result(octopush.credit(), 5.seconds) should be greaterThanOrEqualTo 0.0
     }
   }
 
   "sending a SMS" should {
 
-    "signal an error if the credentials are wrong" in {
-      implicit val system = ActorSystem()
-      val octopush = new Octopush("login@example.com", "apikey")
+    "signal an error if the credentials are wrong" in new DummyOctopushScope {
       val sms = SMS(smsRecipients = List("+33601010101"), smsText = "Hi, this is a SMS", smsType = LowCostFrance)
       val result = octopush.sms(sms)
       Await.result(result, 5.seconds) should throwA[APIError]("101")
     }
+
+    "accept a SMS in test mode" in new ValidOctopushScope {
+      val sms = SMS(smsRecipients = List("+33601010101"), smsText = "Hi, this is a SMS", smsType = LowCostFrance, simulation = true)
+      val result = Await.result(octopush.sms(sms), 5.seconds)
+      result.numberOfSendings should be equalTo 1
+      result.successes must have size 1
+      val success = result.successes.head
+      success.recipient must be equalTo "+33601010101"
+      success.cost must be equalTo result.cost
+    }
+
   }
 
   "error codes" should {
