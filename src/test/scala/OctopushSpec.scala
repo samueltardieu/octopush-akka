@@ -132,9 +132,32 @@ class OctopushSpec extends Specification {
       val result = Await.result(octopush.sms(sms), 5.seconds)
       result.numberOfSendings should be equalTo 1
       result.successes must have size 1
+      result.currencyCode must be equalTo "€"
       val success = result.successes.head
       success.recipient must be equalTo "+33601010101"
       success.cost must be equalTo result.cost
+    }
+
+    "accept a SMS in test mode with SHA1 checksum" in new ValidOctopushScope {
+      val sms = SMS(smsRecipients = List("+33601010101"), smsText = "Hi, this is a SMS", smsType = LowCostFrance, simulation = true,
+        requestKeys = "TRY")
+      val result = Await.result(octopush.sms(sms), 5.seconds)
+      result.numberOfSendings should be equalTo 1
+      result.successes must have size 1
+      result.currencyCode must be equalTo "€"
+      val success = result.successes.head
+      success.recipient must be equalTo "+33601010101"
+      success.cost must be equalTo result.cost
+    }
+
+    "be impossible when attempting to checksum non-existing fields" in new DummyOctopushScope {
+      val sms = SMS(smsRecipients = List("+33601010101"), smsText = "Foo", smsType = LowCostFrance, requestKeys = "b")
+      Await.result(octopush.sms(sms), 5.seconds) must throwA[IllegalArgumentException]("no value defined for key")
+    }
+
+    "be impossible when attempting to checksum over unknown keys" in new DummyOctopushScope {
+      val sms = SMS(smsRecipients = List("+33601010101"), smsText = "Foo", smsType = LowCostFrance, requestKeys = "z")
+      Await.result(octopush.sms(sms), 5.seconds) must throwA[IllegalArgumentException]("unknown key")
     }
 
   }
