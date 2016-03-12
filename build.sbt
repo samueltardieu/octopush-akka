@@ -16,7 +16,6 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-http-core" % "2.4.2",
   "com.typesafe.akka" %% "akka-http-experimental" % "2.4.2",
   "com.typesafe.akka" %% "akka-http-xml-experimental" % "2.4.2",
-  "org.scala-lang.modules" %% "scala-xml" % "1.0.2",
   "com.iheart" %% "ficus" % "1.2.2",
   "org.specs2" %% "specs2-core" % "3.7" % "test"
 )
