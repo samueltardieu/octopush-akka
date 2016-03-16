@@ -31,17 +31,17 @@ class Octopush(userLogin: String, apiKey: String)(implicit system: ActorSystem) 
   private[this] def apiRequest[T](path: String, fields: (String, String)*)(implicit ev: Unmarshaller[NodeSeq, T]): Future[T] = {
     val formData = FormData(Seq("user_login" -> userLogin, "api_key" -> apiKey) ++ fields: _*)
     val request = Post(s"/api/$path", formData).addHeader(Accept(MediaTypes.`application/xml`))
-    log.debug(s"Posting $request")
+    log.debug("Posting {}", request)
     Source.single((request, NotUsed)).via(apiPool).runWith(Sink.head).map(_._1).flatMap {
       case Success(response) if response.status.isSuccess() =>
         Unmarshal(response.entity).to[NodeSeq].flatMap {
           x =>
-            log.debug(s"Received succesful answer with payload: $x")
+            log.debug("Received succesful answer with payload {}", x)
             // Errors are delivered as 200 OK with a payload containing a non-zero error_code field
             (x \ "error_code").headOption.map(_.text.toInt).filterNot(_ == 0).fold(Unmarshal(x).to[T])(e => FastFuture.failed(APIError(e)))
         }
       case Success(response) =>
-        log.debug("Received unsuccessful answer: $response.status")
+        log.debug("Received unsuccessful answer: {}", response.status)
         FastFuture.failed(new StatusError(response.status))
       case Failure(t) =>
         log.error(t, "Connexion failure")
