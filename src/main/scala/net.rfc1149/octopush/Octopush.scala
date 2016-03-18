@@ -26,7 +26,7 @@ class Octopush(userLogin: String, apiKey: String)(implicit system: ActorSystem) 
   private[this] implicit val materializer = ActorMaterializer()
   private[this] implicit val executionContext = system.dispatcher
   private[this] implicit val log = system.log
-  private[this] val apiPool = Http().newHostConnectionPoolHttps[NotUsed]("www.octopush-dm.com")
+  private[this] val apiPool = Http().cachedHostConnectionPoolHttps[NotUsed]("www.octopush-dm.com")
 
   private[this] def apiRequest[T](path: String, fields: (String, String)*)(implicit ev: Unmarshaller[NodeSeq, T]): Future[T] = {
     val formData = FormData(Seq("user_login" -> userLogin, "api_key" -> apiKey) ++ fields: _*)
