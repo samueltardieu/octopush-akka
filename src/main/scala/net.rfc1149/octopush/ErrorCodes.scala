@@ -65,8 +65,8 @@ object ErrorCodes {
 """.stripMargin
 
   val errorMessage: Map[Int, String] =
-      errorsFromDocumentation.lines.map(_.split(" ", 2)).collect {
-          case Array(n, t) => n.toInt -> t.trim.stripSuffix(".")
-      }.toMap
+    errorsFromDocumentation.lines.map(_.split(" ", 2)).collect {
+      case Array(n, t) ⇒ n.toInt → t.trim.stripSuffix(".")
+    }.toMap
 
 }
